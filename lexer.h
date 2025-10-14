@@ -36,6 +36,9 @@ enum{
 	,GREATER // '>'
 	,GREATEREQ // '>='
 	,LESSEQ // '<='
+	,STR // string literal
+	,INT // integer literal
+	,REAL // real literal
 	};
 
 	// SPACE; [ \n\t\r]+

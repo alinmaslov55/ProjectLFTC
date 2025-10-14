@@ -29,7 +29,7 @@ Token *addTkInt(int value){
 	if (nTokens == MAX_TOKENS)
 		err("too many tokens");
 	Token *tk = &tokens[nTokens];
-	tk->code = TYPE_INT;
+	tk->code = INT;
 	tk->i = value;
 	nTokens++;
 	tk->line = line;
@@ -41,7 +41,7 @@ Token *addTkReal(double value){
 	if (nTokens == MAX_TOKENS)
 		err("too many tokens");
 	Token *tk = &tokens[nTokens];
-	tk->code = TYPE_REAL;
+	tk->code = REAL;
 	tk->r = value;
 	tk->line = line;
 	nTokens++;
@@ -49,12 +49,13 @@ Token *addTkReal(double value){
 	printf(" (line %d)\n", tk->line);
 	return tk;
 }
-Token *addTkString(){
+Token *addTkString(char* value){
 	if (nTokens == MAX_TOKENS)
 		err("too many tokens");
 	Token *tk = &tokens[nTokens];
-	tk->code = TYPE_STR;
+	tk->code = STR;
 	tk->line = line;
+	strcpy(tk->text, value);
 	nTokens++;
 	tokenPrint(*tk);
 	printf(" (line %d)\n", tk->line);
@@ -230,9 +231,9 @@ void tokenize(const char *pch) // mai trebuie constante
             while (*pch != '"' && *pch != '\0' && *pch != '\n')
                 pch++;
             if (*pch != '"')
-                err("unterminated string");
+                err("unterminated string literal started on line %d", line);
             char *text = copyn(buf, start, pch);
-            tk = addTkString();
+            tk = addTkString(text);
             strcpy(tk->text, text);
             pch++; // skip closing "
             break;
@@ -297,6 +298,8 @@ void tokenize(const char *pch) // mai trebuie constante
 				if (*pch == '.') // Real constant
 				{
 					pch++;
+					if(!isdigit(*pch))
+						err("invalid real constant on line %d - a digit is expected after '.'", line);
 					while (isdigit(*pch)) pch++;
 					char *text = copyn(buf, start, pch);
 					tk = addTkReal(atof(text));
@@ -308,7 +311,7 @@ void tokenize(const char *pch) // mai trebuie constante
 				}
 			}
 			else
-				err("invalid char: %c (%d)", *pch, *pch);
+				err("invalid char: %c (ASCII: %d) on line %d", *pch, *pch, line);
 		}
 	}
 }
@@ -355,7 +358,7 @@ void tokenPrint(Token tk)
 		printf("TYPE_INT");
 		break;
 	case TYPE_REAL:
-		printf("TYPE_REAL");
+		printf("TYPE_REAL:");
 		break;
 	case TYPE_STR:
 		printf("TYPE_STR");
@@ -419,6 +422,15 @@ void tokenPrint(Token tk)
 		break;
 	case LESSEQ:
 		printf("LESSEQ");
+		break;
+	case STR:
+		printf("STR:\"%s\"", tk.text);
+		break;
+	case INT:
+		printf("INT:%d", tk.i);
+		break;
+	case REAL:
+		printf("REAL:%g", tk.r);
 		break;
 	default:
 		printf("UNKNOWN TOKEN");
