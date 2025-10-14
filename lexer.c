@@ -32,6 +32,7 @@ Token *addTkInt(int value){
 	tk->code = TYPE_INT;
 	tk->i = value;
 	nTokens++;
+	tk->line = line;
 	tokenPrint(*tk);
 	printf(" (line %d)\n", tk->line);
 	return tk;
@@ -42,6 +43,7 @@ Token *addTkReal(double value){
 	Token *tk = &tokens[nTokens];
 	tk->code = TYPE_REAL;
 	tk->r = value;
+	tk->line = line;
 	nTokens++;
 	tokenPrint(*tk);
 	printf(" (line %d)\n", tk->line);
@@ -52,6 +54,7 @@ Token *addTkString(){
 		err("too many tokens");
 	Token *tk = &tokens[nTokens];
 	tk->code = TYPE_STR;
+	tk->line = line;
 	nTokens++;
 	tokenPrint(*tk);
 	printf(" (line %d)\n", tk->line);
@@ -149,6 +152,28 @@ void tokenize(const char *pch) // mai trebuie constante
 		case '/':
 			addTk(DIV);
 			pch++;
+			break;
+		case '&':
+			if (pch[1] == '&')
+			{
+				addTk(AND);
+				pch += 2;
+			}
+			else
+			{
+				err("invalid char: %c (%d)", *pch, *pch);
+			}
+			break;
+		case '|':
+			if (pch[1] == '|')
+			{
+				addTk(OR);
+				pch += 2;
+			}
+			else
+			{
+				err("invalid char: %c (%d)", *pch, *pch);
+			}
 			break;
 		case '>':
 			if (pch[1] == '=')
@@ -258,9 +283,6 @@ void tokenize(const char *pch) // mai trebuie constante
 				else if (strcmp(text, "return") == 0)
 				{
 					addTk(RETURN);
-				}
-				else if (isdigit(*pch))
-				{
 				}
 				else
 				{

@@ -9,6 +9,8 @@ int main(){
     char* source = loadFile(FILENAME);
 
     tokenize(deleteComments(source));
+
+    printf("---------------\n");
     showTokens();
 
     free(source);
