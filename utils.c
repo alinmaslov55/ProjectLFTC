@@ -6,7 +6,7 @@
 
 void err(const char *fmt, ...)
 {
-	fprintf(stderr, "error: ");
+	fprintf(stderr, "[ERROR] : ");
 	va_list va;
 	va_start(va, fmt);
 	vfprintf(stderr, fmt, va);

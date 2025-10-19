@@ -10,7 +10,7 @@ int main(){
 
     tokenize(deleteComments(source));
 
-    printf("---------------\n");
+    printf("\n---------------\n");
     showTokens();
 
     free(source);
