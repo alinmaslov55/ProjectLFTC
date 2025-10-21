@@ -21,8 +21,6 @@ Token *addTk(int code)
 	tk->code = code;
 	tk->line = line;
 	nTokens++;
-	printf("\n%d ", tk->line);
-	tokenPrint(*tk);
 	return tk;
 }
 Token *addTkInt(int value){
@@ -33,8 +31,6 @@ Token *addTkInt(int value){
 	tk->i = value;
 	nTokens++;
 	tk->line = line;
-	printf("\n%d ", tk->line);
-	tokenPrint(*tk);
 	return tk;
 }
 Token *addTkReal(double value){
@@ -45,8 +41,6 @@ Token *addTkReal(double value){
 	tk->r = value;
 	tk->line = line;
 	nTokens++;
-	printf("\n%d ", tk->line);
-	tokenPrint(*tk);
 	return tk;
 }
 Token *addTkString(char* value){
@@ -57,8 +51,6 @@ Token *addTkString(char* value){
 	tk->line = line;
 	strcpy(tk->text, value);
 	nTokens++;
-	printf("\n%d ", tk->line);
-	tokenPrint(*tk);
 	return tk;
 }
 

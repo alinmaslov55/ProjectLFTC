@@ -12,8 +12,10 @@ int main(){
     char* deleted_comments = deleteComments(source);
     tokenize(deleted_comments);
 
-    // printf("\nt---------------\n");
-    // showTokens();
+    printf("\n---------------");
+    showTokens();
+    printf("\n---------------\n");
+    printf("\n");
 
     /* run the parser on the produced tokens */
     parse();
