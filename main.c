@@ -2,17 +2,23 @@
 #include <stdlib.h>
 #include "lexer.h"
 #include "utils.h"
+#include "parser.h"
 
 #define FILENAME "1.q"
 
 int main(){
     char* source = loadFile(FILENAME);
 
-    tokenize(deleteComments(source));
+    char* deleted_comments = deleteComments(source);
+    tokenize(deleted_comments);
 
-    printf("\n---------------\n");
-    showTokens();
+    // printf("\nt---------------\n");
+    // showTokens();
 
+    /* run the parser on the produced tokens */
+    parse();
+
+    free(deleted_comments);
     free(source);
     return 0;
 }
