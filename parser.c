@@ -172,7 +172,7 @@ bool exprAssign(){
 // exprComp ::= exprAdd ( ( LESS | EQUAL ) exprAdd )?
 bool exprComp(){
     if(!exprAdd()) return false;
-    if(tokens[iTk].code==LESS || tokens[iTk].code==EQUAL){
+    if(tokens[iTk].code==LESS || tokens[iTk].code==EQUAL || tokens[iTk].code==GREATER || tokens[iTk].code==LESSEQ || tokens[iTk].code==GREATEREQ || tokens[iTk].code==NOTEQ){
         consume(tokens[iTk].code);
         if(!exprAdd()) tkerr("expected expression after comparison operator");
     }
