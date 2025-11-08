@@ -4,6 +4,7 @@
 #include <stdarg.h>
 
 #include "lexer.h"
+#include "ad.h"
 
 int iTk;	// the iterator in tokens
 Token *consumed;	// the last consumed token
@@ -32,10 +33,22 @@ bool factor();
 
 // baseType ::= TYPE_INT | TYPE_REAL | TYPE_STR
 bool baseType(){
-    if(tokens[iTk].code == TYPE_INT || 
-       tokens[iTk].code == TYPE_REAL || 
-       tokens[iTk].code == TYPE_STR){
-        consume(tokens[iTk].code);
+    if(tokens[iTk].code == TYPE_INT){
+        consume(TYPE_INT);
+        ret.type = TYPE_INT;
+        ret.lval = false;
+        return true;
+    }
+    if(tokens[iTk].code == TYPE_REAL){
+        consume(TYPE_REAL);
+        ret.type = TYPE_REAL;
+        ret.lval = false;
+        return true;
+    }
+    if(tokens[iTk].code == TYPE_STR){
+        consume(TYPE_STR);
+        ret.type = TYPE_STR;
+        ret.lval = false;
         return true;
     }
     return false;
@@ -46,8 +59,18 @@ bool defVar(){
     if(tokens[iTk].code != VAR) return false;
     consume(VAR);
     if(!consume(ID)) tkerr("expected identifier after 'var'");
+    /* semantic action: add symbol for the variable */
+    const char *name = consumed->text;
+    Symbol *s = searchInCurrentDomain(name);
+    if(s) tkerr("symbol redefinition: %s", name);
+    s = addSymbol(name, KIND_VAR);
+    s->local = crtFn != NULL;
+
     if(!consume(COLON)) tkerr("expected ':' after identifier in var declaration");
     if(!baseType()) tkerr("expected type after ':' in var declaration");
+    /* semantic action: set the type of the newly added symbol from ret */
+    s->type = ret.type;
+
     if(!consume(SEMICOLON)) tkerr("expected ';' after var declaration");
     return true;
 }
@@ -56,6 +79,13 @@ bool defFunc(){
     if(tokens[iTk].code != FUNCTION) return false;
     consume(FUNCTION);
     if(!consume(ID)) tkerr("expected function name after 'function'");
+    /* semantic action: create function symbol and new domain */
+    const char *name = consumed->text;
+    Symbol *s = searchInCurrentDomain(name);
+    if(s) tkerr("symbol redefinition: %s", name);
+    crtFn = addSymbol(name, KIND_FN);
+    crtFn->args = NULL;
+    addDomain(); /* new domain for function body and parameters */
     if(!consume(LPAR)) tkerr("expected '(' after function name");
     if(tokens[iTk].code != RPAR){
         if(!funcParams()) tkerr("invalid function parameters");
@@ -63,9 +93,14 @@ bool defFunc(){
     if(!consume(RPAR)) tkerr("expected ')' after function parameters");
     if(!consume(COLON)) tkerr("expected ':' after function header");
     if(!baseType()) tkerr("expected return type after ':' in function header");
+    /* semantic action: set function return type */
+    crtFn->type = ret.type;
     while(defVar()){}
     if(!block()) tkerr("expected function body (block)");
     if(!consume(END)) tkerr("expected 'end' after function body");
+    /* leave function domain */
+    delDomain();
+    crtFn = NULL;
     return true;
 }
 
@@ -93,8 +128,19 @@ bool funcParams(){
 // funcParam ::= ID COLON baseType
 bool funcParam(){
     if(!consume(ID)) return false;
+    const char *argName = consumed->text;
+    /* check redefinition in current domain */
+    Symbol *s = searchInCurrentDomain(argName);
+    if(s) tkerr("symbol redefinition: %s", argName);
     if(!consume(COLON)) tkerr("expected ':' after parameter name");
     if(!baseType()) tkerr("expected type after ':' in parameter");
+    /* semantic action: add parameter to current domain and to function's arg list */
+    s = addSymbol(argName, KIND_ARG);
+    s->local = crtFn != NULL;
+    s->type = ret.type;
+    /* also register in the function's args list and set its type */
+    Symbol *sFnParam = addFnArg(crtFn, argName);
+    if(sFnParam) sFnParam->type = ret.type;
     return true;
 }
 
@@ -293,5 +339,7 @@ bool program(){
 
 void parse(){
 	iTk=0;
+    addDomain(); // create the global domain
 	program();
+    delDomain(); // delete the global domain
 	}
