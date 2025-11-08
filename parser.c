@@ -152,8 +152,12 @@ bool expr(){
 bool exprLogic(){
     if(!exprAssign()) return false;
     while(tokens[iTk].code==AND || tokens[iTk].code==OR){
-        consume(tokens[iTk].code);
-        if(!exprAssign()) tkerr("expected expression after logical operator");
+        int op = tokens[iTk].code;
+        consume(op);
+        if(!exprAssign()){
+            if(op==AND) tkerr("expected expression after '%s'", "&&");
+            else tkerr("expected expression after '%s'", "||");
+        }
     }
     return true;
 }
@@ -172,9 +176,13 @@ bool exprAssign(){
 // exprComp ::= exprAdd ( ( LESS | EQUAL ) exprAdd )?
 bool exprComp(){
     if(!exprAdd()) return false;
-    if(tokens[iTk].code==LESS || tokens[iTk].code==EQUAL || tokens[iTk].code==GREATER || tokens[iTk].code==LESSEQ || tokens[iTk].code==GREATEREQ || tokens[iTk].code==NOTEQ){
-        consume(tokens[iTk].code);
-        if(!exprAdd()) tkerr("expected expression after comparison operator");
+    if(tokens[iTk].code==LESS || tokens[iTk].code==EQUAL){
+        int op = tokens[iTk].code;
+        consume(op);
+        if(!exprAdd()){
+            if(op==LESS) tkerr("expected expression after '%s'", "<");
+            else tkerr("expected expression after '%s'", "==");
+        }
     }
     return true;
 }
@@ -183,8 +191,12 @@ bool exprComp(){
 bool exprAdd(){
     if(!exprMul()) return false;
     while(tokens[iTk].code==ADD || tokens[iTk].code==SUB){
-        consume(tokens[iTk].code);
-        if(!exprMul()) tkerr("expected term after '+' or '-'");
+        int op = tokens[iTk].code;
+        consume(op);
+        if(!exprMul()){
+            if(op==ADD) tkerr("expected term after '%s'", "+");
+            else tkerr("expected term after '%s'", "-");
+        }
     }
     return true;
 }
@@ -193,8 +205,13 @@ bool exprAdd(){
 bool exprMul(){
     if(!exprPrefix()) return false;
     while(tokens[iTk].code==MUL || tokens[iTk].code==DIV){
-        consume(tokens[iTk].code);
-        if(!exprPrefix()) tkerr("expected factor after '*' or '/'");
+        int op = tokens[iTk].code;
+        consume(op);
+        if(!exprPrefix()){
+            if(op==MUL) tkerr("expected factor after '%s'", "*");
+            else tkerr("expected factor after '%s'", "/");
+        }
+
     }
     return true;
 }
