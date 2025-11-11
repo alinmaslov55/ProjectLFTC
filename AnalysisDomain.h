@@ -11,7 +11,8 @@ extern Ret ret;	// used to store data returned from some syntactic rules
 
 enum{KIND_VAR,KIND_ARG,KIND_FN};
 
-struct Symbol;typedef struct Symbol Symbol;
+struct Symbol;
+typedef struct Symbol Symbol;
 struct Symbol{
 	const char *name;		// reference to a name stored in a token
 	int kind;		// KIND_*
@@ -23,7 +24,8 @@ struct Symbol{
 	Symbol *next;		// link to the next Symbol in list
 	};
 
-struct Domain;typedef struct Domain Domain;
+struct Domain;
+typedef struct Domain Domain;
 struct Domain{
 	Domain *parent;		// the parent of this domain or NULL for the global domain
 	Symbol *symbols;		// simple linked list of symbols

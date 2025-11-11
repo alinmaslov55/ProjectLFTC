@@ -4,7 +4,8 @@
 #include <stdarg.h>
 
 #include "lexer.h"
-#include "ad.h"
+#include "AnalysisDomain.h"
+#include "AnalysisTypes.h"
 
 int iTk;	// the iterator in tokens
 Token *consumed;	// the last consumed token
@@ -154,6 +155,8 @@ bool instr(){
         consume(IF);
         if(!consume(LPAR)) tkerr("expected '(' after 'if'");
         if(!expr()) tkerr("expected expression in if condition");
+        /* semantic action: check that condition type is not STR */
+        if(ret.type==TYPE_STR) tkerr("the if condition must have type int or real");
         if(!consume(RPAR)) tkerr("expected ')' after if condition");
         if(!block()) tkerr("expected block after if condition");
         if(consume(ELSE)){
@@ -165,6 +168,9 @@ bool instr(){
     if(c==RETURN){
         consume(RETURN);
         if(!expr()) tkerr("expected expression after 'return'");
+        /* semantic action: check return statement is in a function and types match */
+        if(!crtFn) tkerr("return can be used only in a function");
+        if(ret.type!=crtFn->type) tkerr("the return type must be the same as the function return type");
         if(!consume(SEMICOLON)) tkerr("expected ';' after return expression");
         return true;
     }
@@ -172,6 +178,8 @@ bool instr(){
         consume(WHILE);
         if(!consume(LPAR)) tkerr("expected '(' after 'while'");
         if(!expr()) tkerr("expected expression in while condition");
+        /* semantic action: check that condition type is not STR */
+        if(ret.type==TYPE_STR) tkerr("the while condition must have type int or real");
         if(!consume(RPAR)) tkerr("expected ')' after while condition");
         if(!block()) tkerr("expected block after while condition");
         if(!consume(END)) tkerr("expected 'end' after while");
@@ -200,10 +208,17 @@ bool exprLogic(){
     while(tokens[iTk].code==AND || tokens[iTk].code==OR){
         int op = tokens[iTk].code;
         consume(op);
+        /* semantic action: check that operands have type int or real */
+        Ret leftType = ret;
+        if(leftType.type==TYPE_STR) tkerr("the left operand of '&&' or '||' cannot be of type string");
+
         if(!exprAssign()){
             if(op==AND) tkerr("expected expression after '%s'", "&&");
             else tkerr("expected expression after '%s'", "||");
         }
+
+        if(ret.type==TYPE_STR) tkerr("the right operand of '&&' or '||' cannot be of type string");
+        setRet(TYPE_INT,false); /* logical expressions have int type */
     }
     return true;
 }
@@ -212,8 +227,18 @@ bool exprLogic(){
 bool exprAssign(){
     if(tokens[iTk].code==ID && tokens[iTk+1].code==ASSIGN){
         consume(ID);
+        /* semantic action: check that ID is a variable and is lval */
+        const char *name = consumed->text;
+
         consume(ASSIGN);
         if(!exprComp()) tkerr("expected expression after '='");
+
+        Symbol *s = searchSymbol(name);
+        if(!s) tkerr("undefined symbol '%s'", name);
+        if(s->kind == KIND_FN) tkerr("a function (%s) cannot be used as a destination for assignment ", name);
+        if(s->type!=ret.type) tkerr("the source and destination for assignment must have same type");
+        ret.lval = false;
+
         return true;
     }
     return exprComp();
@@ -225,10 +250,16 @@ bool exprComp(){
     if(tokens[iTk].code==LESS || tokens[iTk].code==EQUAL){
         int op = tokens[iTk].code;
         consume(op);
+        /* semantic action: */
+        Ret leftType = ret;
+
         if(!exprAdd()){
             if(op==LESS) tkerr("expected expression after '%s'", "<");
             else tkerr("expected expression after '%s'", "==");
         }
+
+        if(leftType.type!=ret.type) tkerr("different types for the operands of '<' or '=='");
+        setRet(TYPE_INT, false);
     }
     return true;
 }
@@ -239,10 +270,19 @@ bool exprAdd(){
     while(tokens[iTk].code==ADD || tokens[iTk].code==SUB){
         int op = tokens[iTk].code;
         consume(op);
+
+        /* semantic action: */
+        Ret leftType = ret;
+        if(leftType.type == TYPE_STR) tkerr("the operands of '+' or '-' cannot be of type str");
+
         if(!exprMul()){
             if(op==ADD) tkerr("expected term after '%s'", "+");
             else tkerr("expected term after '%s'", "-");
         }
+
+        /* semantic action: */
+        if(leftType.type != ret.type) tkerr("different types for the operands of '+' or '-'");
+
     }
     return true;
 }
@@ -253,21 +293,48 @@ bool exprMul(){
     while(tokens[iTk].code==MUL || tokens[iTk].code==DIV){
         int op = tokens[iTk].code;
         consume(op);
+
+        /* semantic action: */
+        Ret leftType=ret;
+        if(leftType.type==TYPE_STR)tkerr("the operands of * or / cannot be of type str");
+
         if(!exprPrefix()){
             if(op==MUL) tkerr("expected factor after '%s'", "*");
             else tkerr("expected factor after '%s'", "/");
         }
 
+        if(leftType.type!=ret.type)tkerr("different types for the operands of * or /");
+        ret.lval=false;
     }
     return true;
 }
 
 // exprPrefix ::= ( SUB | NOT )? factor
 bool exprPrefix(){
-    if(tokens[iTk].code==SUB || tokens[iTk].code==NOT){
-        consume(tokens[iTk].code);
+
+    int code = tokens[iTk].code;
+    int retFromFactor;
+
+    switch (code){
+        case SUB:
+            consume(tokens[iTk].code);
+            retFromFactor = factor();
+            /* semantic analysis: */
+            if(ret.type==TYPE_STR)tkerr("the expression of unary - must be of type int or real");
+            ret.lval=false;
+            break;
+        case NOT:
+            consume(tokens[iTk].code);
+            retFromFactor = factor();
+
+            /* semantic analysis: */
+            if(ret.type==TYPE_STR)tkerr("the expression of ! must be of type int or real");
+            setRet(TYPE_INT,false);
+            break;
+        default:
+            retFromFactor = factor();
     }
-    return factor();
+    return retFromFactor;
 }
 
 // factor ::= INT
@@ -277,9 +344,21 @@ bool exprPrefix(){
 // | ID ( LPAR ( expr ( COMMA expr )* )? RPAR )?
 bool factor(){
     int c = tokens[iTk].code;
-    if(c==INT){ consume(INT); return true; }
-    if(c==REAL){ consume(REAL); return true; }
-    if(c==STR){ consume(STR); return true; }
+    if(c==INT){
+        consume(INT); 
+        setRet(TYPE_INT, false);
+        return true; 
+    }
+    if(c==REAL){
+        consume(REAL);
+        setRet(TYPE_REAL, false);
+        return true;
+    }
+    if(c==STR){
+        consume(STR);
+        setRet(TYPE_STR, false);
+        return true;
+    }
     if(c==LPAR){
         consume(LPAR);
         if(!expr()) tkerr("expected expression after '('");
@@ -288,18 +367,43 @@ bool factor(){
     }
     if(c==ID){
         consume(ID);
+
+        Symbol * s= searchSymbol(consumed->text);
+        if(!s) tkerr("undefined symbol: %s", consumed->text);
+
         if(tokens[iTk].code==LPAR){
             consume(LPAR);
+
+            if(s->kind!= KIND_FN) tkerr("%s cannot be called, because it is not a function", s->name);
+            Symbol *argDef = s->args;
+
             if(tokens[iTk].code!=RPAR){
                 if(!expr()) tkerr("expected expression in function call");
+
+                if(!argDef) tkerr("the function %s is called with too many arguments", s->name);
+                if(argDef->type != ret.type) tkerr("the argument type at function %s call is different from the one given at its definition", s->name);
+                argDef=argDef->next;
+
                 while(consume(COMMA)){
                     if(!expr()) tkerr("expected expression after ',' in call");
+                    if(!argDef)tkerr("the function %s is called with too many arguments",s->name);
+                    if(argDef->type!=ret.type)tkerr("the argument type at function %s call is different from the one given at its definition",s->name);
+                    argDef=argDef->next;
                 }
             }
             if(!consume(RPAR)) tkerr("expected ')' after function call arguments");
+            if(argDef)tkerr("the function %s is called with too few arguments",s->name);
+            setRet(s->type,false);
+            return true;
+        } else {
+            /* not a call: must be a variable (lvalue), not a function */
+            if(s->kind==KIND_FN) tkerr("the function %s can only be called", s->name);
+            setRet(s->type,true);
+            return true;
         }
-        return true;
     }
+
+
     return false;
 }
 
@@ -325,6 +429,8 @@ bool consume(int code){
 
 // program ::= ( defVar | defFunc | block )* FINISH
 bool program(){
+    addDomain(); // create the global domain
+    addPredefinedFns();
 	for(;;){
 		if(defVar()){}
 		else if(defFunc()){}
@@ -335,11 +441,10 @@ bool program(){
 		return true;
 		}else tkerr("syntax error");
 	return false;
+    delDomain(); // delete the global domain
 	}
 
 void parse(){
 	iTk=0;
-    addDomain(); // create the global domain
 	program();
-    delDomain(); // delete the global domain
 	}
