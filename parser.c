@@ -6,6 +6,7 @@
 #include "lexer.h"
 #include "AnalysisDomain.h"
 #include "AnalysisTypes.h"
+#include "gen.h"
 
 int iTk;	// the iterator in tokens
 Token *consumed;	// the last consumed token
@@ -73,6 +74,8 @@ bool defVar(){
     s->type = ret.type;
 
     if(!consume(SEMICOLON)) tkerr("expected ';' after var declaration");
+    /* code generation: emit C variable declaration */
+    Text_write(crtVar, "%s %s;\n", cType(ret.type), name);
     return true;
 }
 
@@ -87,6 +90,13 @@ bool defFunc(){
     crtFn = addSymbol(name, KIND_FN);
     crtFn->args = NULL;
     addDomain(); /* new domain for function body and parameters */
+    
+    // Code Generation
+    crtCode=&tFunctions;
+    crtVar=&tFunctions;
+    Text_clear(&tFnHeader);
+    Text_write(&tFnHeader,"%s(",name);
+
     if(!consume(LPAR)) tkerr("expected '(' after function name");
     if(tokens[iTk].code != RPAR){
         if(!funcParams()) tkerr("invalid function parameters");
@@ -95,10 +105,19 @@ bool defFunc(){
     if(!consume(COLON)) tkerr("expected ':' after function header");
     if(!baseType()) tkerr("expected return type after ':' in function header");
     /* semantic action: set function return type */
+
+    // Code Generation
+    Text_write(&tFunctions,"\n%s %s){\n",cType(ret.type),tFnHeader.buf);
+
     crtFn->type = ret.type;
     while(defVar()){}
     if(!block()) tkerr("expected function body (block)");
     if(!consume(END)) tkerr("expected 'end' after function body");
+    // Code Generation
+    Text_write(&tFunctions,"}\n");
+    crtCode=&tMain;
+    crtVar=&tBegin;
+    
     /* leave function domain */
     delDomain();
     crtFn = NULL;
@@ -121,6 +140,7 @@ bool block(){
 bool funcParams(){
     if(!funcParam()) return false;
     while(consume(COMMA)){
+        Text_write(&tFnHeader,",");
         if(!funcParam()) tkerr("expected parameter after ','");
     }
     return true;
@@ -142,6 +162,10 @@ bool funcParam(){
     /* also register in the function's args list and set its type */
     Symbol *sFnParam = addFnArg(crtFn, argName);
     if(sFnParam) sFnParam->type = ret.type;
+
+    // Code Generation
+    Text_write(&tFnHeader,"%s %s",cType(ret.type), argName);
+
     return true;
 }
 
@@ -154,35 +178,56 @@ bool instr(){
     if(c==IF){
         consume(IF);
         if(!consume(LPAR)) tkerr("expected '(' after 'if'");
+        // Code Generation
+        Text_write(crtCode, "if(");
+
         if(!expr()) tkerr("expected expression in if condition");
         /* semantic action: check that condition type is not STR */
         if(ret.type==TYPE_STR) tkerr("the if condition must have type int or real");
         if(!consume(RPAR)) tkerr("expected ')' after if condition");
+        // Code Generation
+        Text_write(crtCode, "){\n");
+
         if(!block()) tkerr("expected block after if condition");
+        // Code Generation
+        Text_write(crtCode, "}\n");
         if(consume(ELSE)){
+            // Code Generation
+            Text_write(crtCode, "else{\n");
             if(!block()) tkerr("expected block after else");
+            // Code Generation
+            Text_write(crtCode, "}\n");
         }
         if(!consume(END)) tkerr("expected 'end' after if");
         return true;
     }
     if(c==RETURN){
+        Text_write(crtCode, "return ");
         consume(RETURN);
         if(!expr()) tkerr("expected expression after 'return'");
         /* semantic action: check return statement is in a function and types match */
         if(!crtFn) tkerr("return can be used only in a function");
         if(ret.type!=crtFn->type) tkerr("the return type must be the same as the function return type");
         if(!consume(SEMICOLON)) tkerr("expected ';' after return expression");
+
+        Text_write(crtCode, ";\n");
         return true;
     }
     if(c==WHILE){
         consume(WHILE);
+        Text_write(crtCode, "while(");
         if(!consume(LPAR)) tkerr("expected '(' after 'while'");
         if(!expr()) tkerr("expected expression in while condition");
         /* semantic action: check that condition type is not STR */
         if(ret.type==TYPE_STR) tkerr("the while condition must have type int or real");
         if(!consume(RPAR)) tkerr("expected ')' after while condition");
+
+        Text_write(crtCode, "){\n");
+
         if(!block()) tkerr("expected block after while condition");
         if(!consume(END)) tkerr("expected 'end' after while");
+
+        Text_write(crtCode, "}\n");
         return true;
     }
     /* otherwise expr? SEMICOLON */
@@ -192,6 +237,7 @@ bool instr(){
     }
     if(expr()){
         if(!consume(SEMICOLON)) tkerr("expected ';' after expression");
+        Text_write(crtCode, ";\n");
         return true;
     }
     return false;
@@ -212,6 +258,9 @@ bool exprLogic(){
         Ret leftType = ret;
         if(leftType.type==TYPE_STR) tkerr("the left operand of '&&' or '||' cannot be of type string");
 
+        if(op == AND) Text_write(crtCode, "&&");
+        if(op == OR) Text_write(crtCode, "||");
+
         if(!exprAssign()){
             if(op==AND) tkerr("expected expression after '%s'", "&&");
             else tkerr("expected expression after '%s'", "||");
@@ -231,6 +280,8 @@ bool exprAssign(){
         const char *name = consumed->text;
 
         consume(ASSIGN);
+
+        Text_write(crtCode, "%s=", name);
         if(!exprComp()) tkerr("expected expression after '='");
 
         Symbol *s = searchSymbol(name);
@@ -253,6 +304,9 @@ bool exprComp(){
         /* semantic action: */
         Ret leftType = ret;
 
+        if(op == LESS) Text_write(crtCode, "<");
+        if(op == EQUAL) Text_write(crtCode, "==");
+
         if(!exprAdd()){
             if(op==LESS) tkerr("expected expression after '%s'", "<");
             else tkerr("expected expression after '%s'", "==");
@@ -270,6 +324,9 @@ bool exprAdd(){
     while(tokens[iTk].code==ADD || tokens[iTk].code==SUB){
         int op = tokens[iTk].code;
         consume(op);
+
+        if(op == ADD) Text_write(crtCode, "+");
+        if(op == SUB) Text_write(crtCode, "-");
 
         /* semantic action: */
         Ret leftType = ret;
@@ -294,6 +351,8 @@ bool exprMul(){
         int op = tokens[iTk].code;
         consume(op);
 
+        if(op == MUL) Text_write(crtCode, "*");
+        if(op == DIV) Text_write(crtCode, "/");
         /* semantic action: */
         Ret leftType=ret;
         if(leftType.type==TYPE_STR)tkerr("the operands of * or / cannot be of type str");
@@ -318,6 +377,8 @@ bool exprPrefix(){
     switch (code){
         case SUB:
             consume(tokens[iTk].code);
+            Text_write(crtCode, "-");
+
             retFromFactor = factor();
             /* semantic analysis: */
             if(ret.type==TYPE_STR)tkerr("the expression of unary - must be of type int or real");
@@ -325,6 +386,7 @@ bool exprPrefix(){
             break;
         case NOT:
             consume(tokens[iTk].code);
+            Text_write(crtCode, "!");
             retFromFactor = factor();
 
             /* semantic analysis: */
@@ -346,23 +408,28 @@ bool factor(){
     int c = tokens[iTk].code;
     if(c==INT){
         consume(INT); 
+        Text_write(crtCode, "%d", consumed->i);
         setRet(TYPE_INT, false);
         return true; 
     }
     if(c==REAL){
         consume(REAL);
+        Text_write(crtCode, "%g", consumed->r);
         setRet(TYPE_REAL, false);
         return true;
     }
     if(c==STR){
         consume(STR);
+        Text_write(crtCode, "\"%s\"", consumed->text);
         setRet(TYPE_STR, false);
         return true;
     }
     if(c==LPAR){
         consume(LPAR);
+        Text_write(crtCode, "(");
         if(!expr()) tkerr("expected expression after '('");
         if(!consume(RPAR)) tkerr("expected ')' after expression");
+        Text_write(crtCode, ")");
         return true;
     }
     if(c==ID){
@@ -370,9 +437,12 @@ bool factor(){
 
         Symbol * s= searchSymbol(consumed->text);
         if(!s) tkerr("undefined symbol: %s", consumed->text);
+        Text_write(crtCode, "%s", s->name);
 
         if(tokens[iTk].code==LPAR){
             consume(LPAR);
+
+            Text_write(crtCode, "(");
 
             if(s->kind!= KIND_FN) tkerr("%s cannot be called, because it is not a function", s->name);
             Symbol *argDef = s->args;
@@ -385,6 +455,7 @@ bool factor(){
                 argDef=argDef->next;
 
                 while(consume(COMMA)){
+                    Text_write(crtCode, ",");
                     if(!expr()) tkerr("expected expression after ',' in call");
                     if(!argDef)tkerr("the function %s is called with too many arguments",s->name);
                     if(argDef->type!=ret.type)tkerr("the argument type at function %s call is different from the one given at its definition",s->name);
@@ -392,6 +463,7 @@ bool factor(){
                 }
             }
             if(!consume(RPAR)) tkerr("expected ')' after function call arguments");
+            Text_write(crtCode, ")");
             if(argDef)tkerr("the function %s is called with too few arguments",s->name);
             setRet(s->type,false);
             return true;
@@ -431,17 +503,38 @@ bool consume(int code){
 bool program(){
     addDomain(); // create the global domain
     addPredefinedFns();
-	for(;;){
-		if(defVar()){}
-		else if(defFunc()){}
-		else if(block()){}
-		else break;
-		}
-	if(consume(FINISH)){
-		return true;
-		}else tkerr("syntax error");
-	return false;
-    delDomain(); // delete the global domain
+
+    /* code generation initialization */
+    crtCode = &tMain;
+    crtVar = &tBegin;
+    Text_write(&tBegin, "#include \"quick.h\"\n\n");
+    Text_write(&tMain, "\nint main(){\n");
+
+    for(;;){
+        if(defVar()){}
+        else if(defFunc()){}
+        else if(block()){}
+        else break;
+    }
+
+    if(consume(FINISH)){
+        /* finalize generated code and write to file */
+        Text_write(&tMain, "return 0;\n}\n");
+        FILE *fis = fopen("1.c","w");
+        if(!fis){
+            printf("cannot write to file 1.c\n");
+            exit(EXIT_FAILURE);
+        }
+        fwrite(tBegin.buf, sizeof(char), tBegin.n, fis);
+        fwrite(tFunctions.buf, sizeof(char), tFunctions.n, fis);
+        fwrite(tMain.buf, sizeof(char), tMain.n, fis);
+        fclose(fis);
+
+        /* cleanup domains */
+        delDomain();
+        return true;
+    } else tkerr("syntax error");
+    return false;
 	}
 
 void parse(){

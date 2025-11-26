@@ -24,7 +24,7 @@ $(TARGET): $(OBJ)
 
 # Clean up build artifacts
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(OBJ) $(TARGET) 1.c
 
 # Run the program
 run: $(TARGET)
